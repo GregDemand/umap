@@ -917,7 +917,7 @@ def _optimize_layout_aligned_euclidean_single_epoch(
                                     )
                                 )
 
-                    current[d] += clip(grad_d) * alpha
+                    current[d] += grad_d * alpha
                     if move_other:
                         other_grad_d = clip(grad_coeff * (other[d] - current[d]))
 
@@ -939,7 +939,7 @@ def _optimize_layout_aligned_euclidean_single_epoch(
                                         )
                                     )
 
-                        other[d] += clip(other_grad_d) * alpha
+                        other[d] += other_grad_d * alpha
 
                 epoch_of_next_sample[m][i] += epochs_per_sample[m][i]
 
@@ -992,7 +992,7 @@ def _optimize_layout_aligned_euclidean_single_epoch(
                                         )
                                     )
 
-                        current[d] += clip(grad_d) * alpha
+                        current[d] += grad_d * alpha
 
                 epoch_of_next_negative_sample[m][i] += (
                     n_neg_samples * epochs_per_negative_sample[m][i]
