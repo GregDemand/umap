@@ -892,6 +892,9 @@ def _optimize_layout_aligned_euclidean_single_epoch(
 
                 dist_squared = rdist(current, other)
 
+                if not np.isfinite(dist_squared):
+                    continue
+
                 if dist_squared > 0.0:
                     grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
                     grad_coeff /= a * pow(dist_squared, b) + 1.0
@@ -905,7 +908,8 @@ def _optimize_layout_aligned_euclidean_single_epoch(
                         neighbor_m = m + offset
                         if n_embeddings > neighbor_m >= 0 != offset:
                             identified_index = relations[m, offset + window_size, j]
-                            if identified_index >= 0:
+                            if identified_index >= 0 \
+                                and np.isfinite(head_embeddings[neighbor_m][identified_index, d]):
                                 grad_d -= clip(
                                     (lambda_ * np.exp(-(np.abs(offset) - 1)))
                                     * regularisation_weights[m, offset + window_size, j]
@@ -925,7 +929,8 @@ def _optimize_layout_aligned_euclidean_single_epoch(
                             neighbor_m = m + offset
                             if n_embeddings > neighbor_m >= 0 != offset:
                                 identified_index = relations[m, offset + window_size, k]
-                                if identified_index >= 0:
+                                if identified_index >= 0 \
+                                    and np.isfinite(head_embeddings[neighbor_m][identified_index, d]):
                                     other_grad_d -= clip(
                                         (lambda_ * np.exp(-(np.abs(offset) - 1)))
                                         * regularisation_weights[
@@ -958,6 +963,9 @@ def _optimize_layout_aligned_euclidean_single_epoch(
 
                     dist_squared = rdist(current, other)
 
+                    if not np.isfinite(dist_squared):
+                        continue
+
                     if dist_squared > 0.0:
                         grad_coeff = 2.0 * gamma * b
                         grad_coeff /= (0.001 + dist_squared) * (
@@ -978,7 +986,8 @@ def _optimize_layout_aligned_euclidean_single_epoch(
                             neighbor_m = m + offset
                             if n_embeddings > neighbor_m >= 0 != offset:
                                 identified_index = relations[m, offset + window_size, j]
-                                if identified_index >= 0:
+                                if identified_index >= 0 \
+                                    and np.isfinite(head_embeddings[neighbor_m][identified_index, d]):
                                     grad_d -= clip(
                                         (lambda_ * np.exp(-(np.abs(offset) - 1)))
                                         * regularisation_weights[
@@ -994,9 +1003,9 @@ def _optimize_layout_aligned_euclidean_single_epoch(
 
                         current[d] += grad_d * alpha
 
-                epoch_of_next_negative_sample[m][i] += (
-                    n_neg_samples * epochs_per_negative_sample[m][i]
-                )
+                    epoch_of_next_negative_sample[m][i] += (
+                        epochs_per_negative_sample[m][i]
+                    )
 
 
 def optimize_layout_aligned_euclidean(
@@ -1040,7 +1049,7 @@ def optimize_layout_aligned_euclidean(
 
     optimize_fn = numba.njit(
         _optimize_layout_aligned_euclidean_single_epoch,
-        fastmath=True,
+        fastmath={'afn', 'arcp', 'contract', 'nsz', 'reassoc'},
         parallel=parallel,
     )
 
