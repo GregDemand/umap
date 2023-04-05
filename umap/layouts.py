@@ -4,6 +4,9 @@ import umap.distances as dist
 from umap.utils import tau_rand_int
 from tqdm.auto import tqdm
 
+INT32_MIN = np.iinfo(np.int32).min + 1
+INT32_MAX = np.iinfo(np.int32).max - 1
+
 
 @numba.njit()
 def clip(val):
@@ -1059,7 +1062,11 @@ def optimize_layout_aligned_euclidean(
     if "disable" not in tqdm_kwds:
         tqdm_kwds["disable"] = not verbose
 
+    iteration_rng = np.random.default_rng(abs(rng_state[0]))
+
     for n in tqdm(range(n_epochs), **tqdm_kwds):
+
+        iteration_rng_state = iteration_rng.integers(INT32_MIN, INT32_MAX, 3).astype(np.int64)
         optimize_fn(
             head_embeddings,
             tail_embeddings,
@@ -1070,7 +1077,7 @@ def optimize_layout_aligned_euclidean(
             b,
             regularisation_weights,
             relations,
-            rng_state,
+            iteration_rng_state,
             gamma,
             lambda_,
             dim,
