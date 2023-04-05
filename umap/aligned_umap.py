@@ -575,7 +575,8 @@ class AlignedUMAP(BaseEstimator):
                     np.full(mapper.embedding_.shape[0], n_epochs + 1, dtype=np.float64)
                 )
 
-        new_relations = expand_relations(self.dict_relations_)
+        window_size = fit_params.get("window_size", self.alignment_window_size)
+        new_relations = expand_relations(self.dict_relations_, window_size)
         new_regularisation_weights = build_neighborhood_similarities(
             indptr_list,
             indices_list,
