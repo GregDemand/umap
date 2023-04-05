@@ -5,7 +5,7 @@ from sklearn.utils import check_random_state, check_array
 
 from umap.sparse import arr_intersect as intersect1d
 from umap.sparse import arr_union as union1d
-from umap.umap_ import UMAP, make_epochs_per_sample
+from umap.umap_ import UMAP, make_epochs_per_sample, find_ab_params
 from umap.spectral import spectral_layout
 from umap.layouts import optimize_layout_aligned_euclidean
 
@@ -141,7 +141,6 @@ def get_nth_item_or_val(iterable_or_val, n):
 
 PARAM_NAMES = (
     "n_neighbors",
-    "n_components",
     "metric",
     "metric_kwds",
     "n_epochs",
@@ -149,17 +148,21 @@ PARAM_NAMES = (
     "init",
     "min_dist",
     "spread",
+    "n_jobs",
     "set_op_mix_ratio",
     "local_connectivity",
-    "repulsion_strength",
-    "negative_sample_rate",
     "transform_queue_size",
-    "angular_rp_forest",
+    "random_state",
     "target_n_neighbors",
     "target_metric",
     "target_metric_kwds",
     "target_weight",
+    "transform_seed",
+    "transform_mode",
+    "tqdm_kwds",
     "unique",
+    "disconnection_distance",
+    "precomputed_knn",
 )
 
 
@@ -239,6 +242,7 @@ class AlignedUMAP(BaseEstimator):
         min_dist=0.1,
         spread=1.0,
         low_memory=False,
+        n_jobs=-1,
         set_op_mix_ratio=1.0,
         local_connectivity=1.0,
         repulsion_strength=1.0,
@@ -253,43 +257,50 @@ class AlignedUMAP(BaseEstimator):
         target_metric_kwds=None,
         target_weight=0.5,
         transform_seed=42,
+        transform_mode="embedding",
         force_approximation_algorithm=False,
         verbose=False,
+        tqdm_kwds=None,
         unique=False,
+        disconnection_distance=None,
+        precomputed_knn=(None, None, None),
     ):
 
         self.n_neighbors = n_neighbors
+        self.n_components = n_components
         self.metric = metric
         self.metric_kwds = metric_kwds
-
         self.n_epochs = n_epochs
-        self.init = init
-        self.n_components = n_components
-        self.repulsion_strength = repulsion_strength
         self.learning_rate = learning_rate
-        self.alignment_regularisation = alignment_regularisation
-        self.alignment_window_size = alignment_window_size
-
-        self.spread = spread
+        self.init = init
         self.min_dist = min_dist
+        self.spread = spread
         self.low_memory = low_memory
+        self.n_jobs = n_jobs
         self.set_op_mix_ratio = set_op_mix_ratio
         self.local_connectivity = local_connectivity
+        self.repulsion_strength = repulsion_strength
         self.negative_sample_rate = negative_sample_rate
+        self.transform_queue_size = transform_queue_size
+        self.a = a
+        self.b = b
         self.random_state = random_state
         self.angular_rp_forest = angular_rp_forest
-        self.transform_queue_size = transform_queue_size
         self.target_n_neighbors = target_n_neighbors
         self.target_metric = target_metric
         self.target_metric_kwds = target_metric_kwds
         self.target_weight = target_weight
         self.transform_seed = transform_seed
+        self.transform_mode = transform_mode
         self.force_approximation_algorithm = force_approximation_algorithm
         self.verbose = verbose
+        self.tqdm_kwds = tqdm_kwds
         self.unique = unique
+        self.disconnection_distance = disconnection_distance
+        self.precomputed_knn = precomputed_knn
 
-        self.a = a
-        self.b = b
+        self.alignment_regularisation = alignment_regularisation
+        self.alignment_window_size = alignment_window_size
 
     def fit(self, X, y=None, **fit_params):
         if "relations" not in fit_params:
@@ -317,34 +328,47 @@ class AlignedUMAP(BaseEstimator):
         self.mappers_ = [
             UMAP(
                 n_neighbors=get_nth_item_or_val(self.n_neighbors, n),
-                min_dist=get_nth_item_or_val(self.min_dist, n),
-                n_epochs=get_nth_item_or_val(self.n_epochs, n),
-                repulsion_strength=get_nth_item_or_val(self.repulsion_strength, n),
-                learning_rate=get_nth_item_or_val(self.learning_rate, n),
-                spread=get_nth_item_or_val(self.spread, n),
-                negative_sample_rate=get_nth_item_or_val(self.negative_sample_rate, n),
-                local_connectivity=get_nth_item_or_val(self.local_connectivity, n),
-                set_op_mix_ratio=get_nth_item_or_val(self.set_op_mix_ratio, n),
-                unique=get_nth_item_or_val(self.unique, n),
                 n_components=self.n_components,
-                metric=self.metric,
-                metric_kwds=self.metric_kwds,
+                metric=get_nth_item_or_val(self.metric, n),
+                metric_kwds=get_nth_item_or_val(self.metric_kwds, n),
+                n_epochs=get_nth_item_or_val(self.n_epochs, n),
+                learning_rate=get_nth_item_or_val(self.learning_rate, n),
+                init=get_nth_item_or_val(self.init, n),
+                min_dist=get_nth_item_or_val(self.min_dist, n),
+                spread=get_nth_item_or_val(self.spread, n),
                 low_memory=self.low_memory,
-                random_state=self.random_state,
-                angular_rp_forest=self.angular_rp_forest,
-                transform_queue_size=self.transform_queue_size,
-                target_n_neighbors=self.target_n_neighbors,
-                target_metric=self.target_metric,
-                target_metric_kwds=self.target_metric_kwds,
-                target_weight=self.target_weight,
-                transform_seed=self.transform_seed,
-                force_approximation_algorithm=self.force_approximation_algorithm,
-                verbose=self.verbose,
+                n_jobs=get_nth_item_or_val(self.n_jobs, n),
+                set_op_mix_ratio=get_nth_item_or_val(self.set_op_mix_ratio, n),
+                local_connectivity=get_nth_item_or_val(self.local_connectivity, n),
+                repulsion_strength=self.repulsion_strength,
+                negative_sample_rate=self.negative_sample_rate,
+                transform_queue_size=get_nth_item_or_val(self.transform_queue_size, n),
                 a=self.a,
                 b=self.b,
+                random_state=get_nth_item_or_val(self.random_state, n), # NEEDS fixing!
+                angular_rp_forest=self.angular_rp_forest,
+                target_n_neighbors=get_nth_item_or_val(self.target_n_neighbors, n),
+                target_metric=get_nth_item_or_val(self.target_metric, n),
+                target_metric_kwds=get_nth_item_or_val(self.target_metric_kwds, n),
+                target_weight=get_nth_item_or_val(self.target_weight, n),
+                transform_seed=get_nth_item_or_val(self.transform_seed, n),
+                transform_mode=self.transform_mode,
+                force_approximation_algorithm=self.force_approximation_algorithm,
+                verbose=self.verbose,
+                tqdm_kwds=get_nth_item_or_val(self.tqdm_kwds, n),
+                unique=get_nth_item_or_val(self.unique, n),
+                disconnection_distance=get_nth_item_or_val(self.disconnection_distance, n),
+                precomputed_knn=get_nth_item_or_val(self.precomputed_knn, n) if self.precomputed_knn != (None, None, None) else self.precomputed_knn,
             ).fit(X[n], y[n])
             for n in range(self.n_models_)
         ]
+
+        # Handle spread and min_dist arguments, setting default
+        if self.a is None or self.b is None:
+            self._a, self._b = find_ab_params(self.spread, self.min_dist)
+        else:
+            self._a = self.a
+            self._b = self.b
 
         if self.n_epochs is None:
             n_epochs = 200
@@ -425,7 +449,11 @@ class AlignedUMAP(BaseEstimator):
             regularisation_weights,
             relations,
             seed_triplet,
+            a=self._a,
+            b=self._b,
+            gamma=self.repulsion_strength,
             lambda_=self.alignment_regularisation,
+            negative_sample_rate=self.negative_sample_rate,
             move_other=True,
         )
 
@@ -454,24 +482,37 @@ class AlignedUMAP(BaseEstimator):
 
         new_mapper = UMAP(
             n_neighbors=get_nth_item_or_val(self.n_neighbors, self.n_models_),
-            min_dist=get_nth_item_or_val(self.min_dist, self.n_models_),
-            n_epochs=get_nth_item_or_val(self.n_epochs, self.n_models_),
-            repulsion_strength=get_nth_item_or_val(
-                self.repulsion_strength, self.n_models_
-            ),
-            learning_rate=get_nth_item_or_val(self.learning_rate, self.n_models_),
-            spread=get_nth_item_or_val(self.spread, self.n_models_),
-            negative_sample_rate=get_nth_item_or_val(
-                self.negative_sample_rate, self.n_models_
-            ),
-            local_connectivity=get_nth_item_or_val(
-                self.local_connectivity, self.n_models_
-            ),
-            set_op_mix_ratio=get_nth_item_or_val(self.set_op_mix_ratio, self.n_models_),
-            unique=get_nth_item_or_val(self.unique, self.n_models_),
             n_components=self.n_components,
-            random_state=self.random_state,
-            transform_seed=self.transform_seed,
+            metric=get_nth_item_or_val(self.metric, self.n_models_),
+            metric_kwds=get_nth_item_or_val(self.metric_kwds, self.n_models_),
+            n_epochs=get_nth_item_or_val(self.n_epochs, self.n_models_),
+            learning_rate=get_nth_item_or_val(self.learning_rate, self.n_models_),
+            init=get_nth_item_or_val(self.init, self.n_models_),
+            min_dist=get_nth_item_or_val(self.min_dist, self.n_models_),
+            spread=get_nth_item_or_val(self.spread, self.n_models_),
+            low_memory=self.low_memory,
+            n_jobs=get_nth_item_or_val(self.n_jobs, self.n_models_),
+            set_op_mix_ratio=get_nth_item_or_val(self.set_op_mix_ratio, self.n_models_),
+            local_connectivity=get_nth_item_or_val(self.local_connectivity, self.n_models_),
+            repulsion_strength=self.repulsion_strength,
+            negative_sample_rate=self.negative_sample_rate,
+            transform_queue_size=get_nth_item_or_val(self.transform_queue_size, self.n_models_),
+            a=self.a,
+            b=self.b,
+            random_state=get_nth_item_or_val(self.random_state, self.n_models_),
+            angular_rp_forest=self.angular_rp_forest,
+            target_n_neighbors=get_nth_item_or_val(self.target_n_neighbors, self.n_models_),
+            target_metric=get_nth_item_or_val(self.target_metric, self.n_models_),
+            target_metric_kwds=get_nth_item_or_val(self.target_metric_kwds, self.n_models_),
+            target_weight=get_nth_item_or_val(self.target_weight, self.n_models_),
+            transform_seed=get_nth_item_or_val(self.transform_seed, self.n_models_),
+            transform_mode=self.transform_mode,
+            force_approximation_algorithm=self.force_approximation_algorithm,
+            verbose=self.verbose,
+            tqdm_kwds=get_nth_item_or_val(self.tqdm_kwds, self.n_models_),
+            unique=get_nth_item_or_val(self.unique, self.n_models_),
+            disconnection_distance=get_nth_item_or_val(self.disconnection_distance, self.n_models_),
+            precomputed_knn=get_nth_item_or_val(self.precomputed_knn, n) if self.precomputed_knn != (None, None, None) else self.precomputed_knn,
         ).fit(X, y)
 
         self.n_models_ += 1
@@ -479,6 +520,13 @@ class AlignedUMAP(BaseEstimator):
 
         # TODO: We can likely make this more efficient and not recompute each time
         self.dict_relations_ += [invert_dict(new_dict_relations)]
+
+        # Handle spread and min_dist arguments, setting default
+        if self.a is None or self.b is None:
+            self._a, self._b = find_ab_params(self.spread, self.min_dist)
+        else:
+            self._a = self.a
+            self._b = self.b
 
         if self.n_epochs is None:
             n_epochs = 200
@@ -532,5 +580,10 @@ class AlignedUMAP(BaseEstimator):
             new_regularisation_weights,
             new_relations,
             seed_triplet,
+            a=self._a,
+            b=self._b,
+            gamma=self.repulsion_strength,
             lambda_=self.alignment_regularisation,
+            negative_sample_rate=self.negative_sample_rate,
+            move_other=True,
         )
