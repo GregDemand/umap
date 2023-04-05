@@ -1,11 +1,14 @@
 import numpy as np
+import scipy
 import numba
 from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state, check_array
+from sklearn.neighbors import KDTree
+from sklearn.decomposition import PCA, TruncatedSVD
 
 from umap.sparse import arr_intersect as intersect1d
 from umap.sparse import arr_union as union1d
-from umap.umap_ import UMAP, make_epochs_per_sample, find_ab_params
+from umap.umap_ import UMAP, make_epochs_per_sample, find_ab_params, noisy_scale_coords
 from umap.spectral import spectral_layout
 from umap.layouts import optimize_layout_aligned_euclidean
 
@@ -399,32 +402,91 @@ class AlignedUMAP(BaseEstimator):
             indices_list,
             relations,
         )
-        first_init = spectral_layout(
-            self.mappers_[0]._raw_data,
-            self.mappers_[0].graph_,
-            self.n_components,
-            rng_state_transform,
-        )
-        expansion = 10.0 / np.abs(first_init).max()
-        first_embedding = (first_init * expansion).astype(
-            np.float32,
-            order="C",
-        )
+
+        init = get_nth_item_or_val(self.init, 0)
+        if isinstance(init, str) and init == "random":
+            first_embedding = rng_state_transform.uniform(
+                low=-10.0, high=10.0, size=(self.mappers_[0].graph_.shape[0], self.n_components)
+            ).astype(np.float32)
+        elif isinstance(init, str) and init == "pca":
+            if scipy.sparse.issparse(self.mappers_[0]._raw_data):
+                pca = TruncatedSVD(n_components=self.n_components, random_state=rng_state_transform)
+            else:
+                pca = PCA(n_components=self.n_components, random_state=rng_state_transform)
+            first_embedding = pca.fit_transform(self.mappers_[0]._raw_data).astype(np.float32)
+            first_embedding = noisy_scale_coords(
+                first_embedding, rng_state_transform, max_coord=10, noise=0.0001
+            )
+        elif isinstance(init, str) and init == "spectral":
+            print('Starting with a spectral embedding')
+            first_init = spectral_layout(
+                self.mappers_[0]._raw_data,
+                self.mappers_[0].graph_,
+                self.n_components,
+                rng_state_transform,
+                metric=get_nth_item_or_val(self.metric, 0),
+                metric_kwds=get_nth_item_or_val(self.metric_kwds, 0) or {},
+            )
+            # We add a little noise to avoid local minima for optimization to come
+            first_embedding = noisy_scale_coords(
+                    first_init, rng_state_transform, max_coord=10, noise=0.0001
+            )
+        else:
+            init_data = init
+            if len(init_data.shape) == 2:
+                if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
+                    tree = KDTree(init_data)
+                    dist, ind = tree.query(init_data, k=2)
+                    nndist = np.mean(dist[:, 1])
+                    first_embedding = init_data + rng_state_transform.normal(
+                        scale=0.001 * nndist, size=init_data.shape
+                    ).astype(np.float32)
+                else:
+                    first_embedding = init_data
 
         embeddings = numba.typed.List.empty_list(numba.types.float32[:, ::1])
         embeddings.append(first_embedding)
         for i in range(1, self.n_models_):
-            next_init = spectral_layout(
-                self.mappers_[i]._raw_data,
-                self.mappers_[i].graph_,
-                self.n_components,
-                rng_state_transform,
-            )
-            expansion = 10.0 / np.abs(next_init).max()
-            next_embedding = (next_init * expansion).astype(
-                np.float32,
-                order="C",
-            )
+            init = get_nth_item_or_val(self.init, i)
+            if isinstance(init, str) and init == "random":
+                next_embedding = rng_state_transform.uniform(
+                    low=-10.0, high=10.0, size=(self.mappers_[i].graph_.shape[0], self.n_components)
+                ).astype(np.float32)
+            elif isinstance(init, str) and init == "pca":
+                if scipy.sparse.issparse(self.mappers_[i]._raw_data):
+                    pca = TruncatedSVD(n_components=self.n_components, random_state=rng_state_transform)
+                else:
+                    pca = PCA(n_components=self.n_components, random_state=rng_state_transform)
+                next_embedding = pca.fit_transform(self.mappers_[i]._raw_data).astype(np.float32)
+                next_embedding = noisy_scale_coords(
+                    next_embedding, rng_state_transform, max_coord=10, noise=0.0001
+                )
+            elif isinstance(init, str) and init == "spectral":
+                next_init = spectral_layout(
+                    self.mappers_[i]._raw_data,
+                    self.mappers_[i].graph_,
+                    self.n_components,
+                    rng_state_transform,
+                    metric=get_nth_item_or_val(self.metric, i),
+                    metric_kwds=get_nth_item_or_val(self.metric_kwds, i) or {},
+                )
+                # We add a little noise to avoid local minima for optimization to come
+                next_embedding = noisy_scale_coords(
+                    next_init, rng_state_transform, max_coord=10, noise=0.0001
+                )
+            else:
+                init_data = init
+                if len(init_data.shape) == 2:
+                    if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
+                        tree = KDTree(init_data)
+                        dist, ind = tree.query(init_data, k=2)
+                        nndist = np.mean(dist[:, 1])
+                        next_embedding = init_data + rng_state_transform.normal(
+                            scale=0.001 * nndist, size=init_data.shape
+                        ).astype(np.float32)
+                    else:
+                        next_embedding = init_data
+
             anchor_data = relations[i][window_size - 1]
             left_anchors = anchor_data[anchor_data >= 0]
             right_anchors = np.where(anchor_data >= 0)[0]
