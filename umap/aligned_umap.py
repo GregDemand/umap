@@ -133,7 +133,7 @@ def get_nth_item_or_val(iterable_or_val, n):
         return None
     if type(iterable_or_val) in (list, tuple, np.ndarray):
         return iterable_or_val[n]
-    elif type(iterable_or_val) in (int, float, bool, None):
+    elif type(iterable_or_val) in (int, float, bool, str, None,):
         return iterable_or_val
     else:
         raise ValueError("Unrecognized parameter type")
