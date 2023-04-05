@@ -444,10 +444,21 @@ class AlignedUMAP(BaseEstimator):
                         ).astype(np.float32)
                     else:
                         next_embedding = init_data
+
+            disconnected_vertices = (
+                np.array(self.mappers_[i].graph_.sum(axis=1)).flatten() == 0
+            )
+            next_embedding[disconnected_vertices] = np.full(self.n_components, np.nan)
+
             if i != 0:
                 anchor_data = relations[i][window_size - 1]
                 left_anchors = anchor_data[anchor_data >= 0]
                 right_anchors = np.where(anchor_data >= 0)[0]
+                # Remove NaN anchors for disconnected vertices
+                connected_anchors = np.nonzero(~(np.any(np.isnan(embeddings[-1][left_anchors]), axis=1)
+                    | np.any(np.isnan(next_embedding[right_anchors]), axis=1)))
+                left_anchors = left_anchors[connected_anchors]
+                right_anchors = right_anchors[connected_anchors]
                 embeddings.append(
                     procrustes_align(
                         embeddings[-1],
@@ -479,11 +490,6 @@ class AlignedUMAP(BaseEstimator):
             move_other=True,
         )
 
-        for i, embedding in enumerate(self.embeddings_):
-            disconnected_vertices = (
-                np.array(self.mappers_[i].graph_.sum(axis=1)).flatten() == 0
-            )
-            embedding[disconnected_vertices] = np.full(self.n_components, np.nan)
 
         return self
 
@@ -586,6 +592,11 @@ class AlignedUMAP(BaseEstimator):
         new_embedding = init_from_existing(
             self.embeddings_[-1], new_mapper.graph_, new_dict_relations
         )
+
+        disconnected_vertices = (
+            np.array(self.mappers_[-1].graph_.sum(axis=1)).flatten() == 0
+        )
+        new_embedding[disconnected_vertices] = np.full(self.n_components, np.nan)
 
         self.embeddings_.append(new_embedding)
 
