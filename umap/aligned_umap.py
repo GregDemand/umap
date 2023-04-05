@@ -600,7 +600,10 @@ class AlignedUMAP(BaseEstimator):
 
         self.embeddings_.append(new_embedding)
 
-        rng_state_transform = np.random.RandomState(self.transform_seed)
+        if type(self.transform_seed) in (list, tuple, np.ndarray):
+            rng_state_transform = np.random.RandomState(get_nth_item_or_val(self.transform_seed, self.n_models_))
+        else:
+            rng_state_transform = np.random.RandomState(self.transform_seed + self.n_models_)
         seed_triplet = rng_state_transform.randint(INT32_MIN, INT32_MAX, 3).astype(
             np.int64
         )
