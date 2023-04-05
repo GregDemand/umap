@@ -403,50 +403,8 @@ class AlignedUMAP(BaseEstimator):
             relations,
         )
 
-        init = get_nth_item_or_val(self.init, 0)
-        if isinstance(init, str) and init == "random":
-            first_embedding = rng_state_transform.uniform(
-                low=-10.0, high=10.0, size=(self.mappers_[0].graph_.shape[0], self.n_components)
-            ).astype(np.float32)
-        elif isinstance(init, str) and init == "pca":
-            if scipy.sparse.issparse(self.mappers_[0]._raw_data):
-                pca = TruncatedSVD(n_components=self.n_components, random_state=rng_state_transform)
-            else:
-                pca = PCA(n_components=self.n_components, random_state=rng_state_transform)
-            first_embedding = pca.fit_transform(self.mappers_[0]._raw_data).astype(np.float32)
-            first_embedding = noisy_scale_coords(
-                first_embedding, rng_state_transform, max_coord=10, noise=0.0001
-            )
-        elif isinstance(init, str) and init == "spectral":
-            print('Starting with a spectral embedding')
-            first_init = spectral_layout(
-                self.mappers_[0]._raw_data,
-                self.mappers_[0].graph_,
-                self.n_components,
-                rng_state_transform,
-                metric=get_nth_item_or_val(self.metric, 0),
-                metric_kwds=get_nth_item_or_val(self.metric_kwds, 0) or {},
-            )
-            # We add a little noise to avoid local minima for optimization to come
-            first_embedding = noisy_scale_coords(
-                    first_init, rng_state_transform, max_coord=10, noise=0.0001
-            )
-        else:
-            init_data = init
-            if len(init_data.shape) == 2:
-                if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
-                    tree = KDTree(init_data)
-                    dist, ind = tree.query(init_data, k=2)
-                    nndist = np.mean(dist[:, 1])
-                    first_embedding = init_data + rng_state_transform.normal(
-                        scale=0.001 * nndist, size=init_data.shape
-                    ).astype(np.float32)
-                else:
-                    first_embedding = init_data
-
         embeddings = numba.typed.List.empty_list(numba.types.float32[:, ::1])
-        embeddings.append(first_embedding)
-        for i in range(1, self.n_models_):
+        for i in range(self.n_models_):
             init = get_nth_item_or_val(self.init, i)
             if isinstance(init, str) and init == "random":
                 next_embedding = rng_state_transform.uniform(
@@ -486,17 +444,19 @@ class AlignedUMAP(BaseEstimator):
                         ).astype(np.float32)
                     else:
                         next_embedding = init_data
-
-            anchor_data = relations[i][window_size - 1]
-            left_anchors = anchor_data[anchor_data >= 0]
-            right_anchors = np.where(anchor_data >= 0)[0]
-            embeddings.append(
-                procrustes_align(
-                    embeddings[-1],
-                    next_embedding,
-                    np.vstack([left_anchors, right_anchors]),
+            if i != 0:
+                anchor_data = relations[i][window_size - 1]
+                left_anchors = anchor_data[anchor_data >= 0]
+                right_anchors = np.where(anchor_data >= 0)[0]
+                embeddings.append(
+                    procrustes_align(
+                        embeddings[-1],
+                        next_embedding,
+                        np.vstack([left_anchors, right_anchors]),
+                    )
                 )
-            )
+            else:
+                embeddings.append(next_embedding)
 
         seed_triplet = rng_state_transform.randint(INT32_MIN, INT32_MAX, 3).astype(
             np.int64
