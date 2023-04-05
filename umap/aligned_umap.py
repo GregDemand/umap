@@ -198,13 +198,13 @@ def init_from_existing_internal(
     result = np.zeros((n_samples, n_features), dtype=np.float32)
 
     for i in range(n_samples):
-        if i in relation_dict:
+        if i in relation_dict and np.isfinite(previous_embedding[relation_dict[i]]).all():
             result[i] = previous_embedding[relation_dict[i]]
         else:
             normalisation = 0.0
             for idx in range(weights_indptr[i], weights_indptr[i + 1]):
                 j = weights_indices[idx]
-                if j in relation_dict:
+                if j in relation_dict and np.isfinite(previous_embedding[relation_dict[j]]).all():
                     normalisation += weights_data[idx]
                     result[i] += (
                         weights_data[idx] * previous_embedding[relation_dict[j]]
